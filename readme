@@ -30,8 +30,7 @@ These steps are needed once in a while and can easily be
 automated. Everything we need to create the database is at
 the RIPE project:
 
-https://www.ripe.net/analyse/internet-measurements/
-routing-information-service-ris/ris-raw-data
+https://www.ripe.net/analyse/internet-measurements/routing-information-service-ris/ris-raw-data
 
 First of all, download MRT-formatted global routing table
 (the file such as bview.20160409.0800.gz). Secondly,
