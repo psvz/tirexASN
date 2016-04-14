@@ -1,0 +1,96 @@
+Tirex post-processes HTTP access log lines and appends ASN.
+
+Usage: ./tirex <formatStringIN> <formatStringOUT>
+
+The tool reads stdin line-by-line, extracts IP address by a
+format string passed as the first argument, looks up
+corresponding ASN, and writes to stdout by a format string
+passed as the second argument.
+
+<formatStringIN> is scanf(3) match, wherein %s is a sole
+assignment for the line's field containing IP address (see
+example below). <formatStringOUT> is printf(3) format,
+containing %s - the original line - followed by %u - ASN.
+
+The tool is fully IPv4/6 agnostic and single threaded as
+non-critical post-processing in shell scripts is the
+intended mode of use. Deemed portable (no Linux specific
+calls).
+
+At the start, asn-prefix database is loaded from the text
+file and sorted with stdlib's qsort() [n.log(n); n^2] for
+standard binary search at look-up time. Luckily, the
+database comes from RIPE sorted. The fileneame (apx in this
+distro) of the database can be changed in tirex.h at compile
+time.
+
+ASN-PREFIX DATABASE COOKBOOK
+
+These steps are needed once in a while and can easily be
+automated. Everything we need to create the database is at
+the RIPE project:
+
+https://www.ripe.net/analyse/internet-measurements/
+routing-information-service-ris/ris-raw-data
+
+First of all, download MRT-formatted global routing table
+(the file such as bview.20160409.0800.gz). Secondly,
+download and compile libbgpdump (note: autoconf package has
+to be installed first). Assuming bgpdump and bview*.gz in
+the same folder:
+
+# ./bgpdump bview.20160409.0800.gz |grep ASPATH |awk '{print
+$NF}' |sed 's|{\([^,}]*\).*|\1|' >asn
+
+Here, we dump ASPATH, take the last field (destination AS),
+pick the lowest ASN in case of route aggregation (curly
+braced sets), and store the result into asn file. Next:
+
+# ./bgpdump bview.20160409.0800.gz |grep PREFIX |sed
+'s|PREFIX: \([^/]*\).*|\1|' >prx
+
+Here, we dump prefixes without slash-network part of CIDR
+into prx file. You can do a sanity check like this:
+
+# wc -l asn
+# wc -l prx
+
+and see that the files have same number of entries. Merge:
+
+# paste asn prx >map
+
+Now, removing duplicate prefixes:
+
+# uniq -f 1 map >apx
+
+The apx database is ready.
+
+EXAMPLE: HOW TO USE FOR LOG POST-PROCESSING
+
+# time zcat mtv_251889.esw3ccust_U.201602232200-2400-10.gz
+|./tirex "%*s %*s %s" $'%s\t"EIP='$ip$';ASNUM=%u"\n' >test
+
+Piping log lines to Tirex, the latter takes the third field
+on the log line ("%*s %*s %s") as IPv4/6 address, find
+matching ASN, and append it to the original line after TAB
+separator as "EIP=a.b.c.d;ASNUM=1234"
+
+This is assuming that shell variable ip=a.b.c.d
+
+Note $'' shell notation used to pass formatting string
+correctly. Also note, no escaping for quotes required inside
+$'' block. Performance-wise, on a virtual instance, single
+core:
+
+real    0m18.734s
+
+# wc -l test
+1694381 test
+
+It took 18 seconds to process 1.6 million lines.
+
+Each entry in apx database takes 20 byte of RAM on x32 arch
+and 24 bytes on x64 arch. Therefore, usual half million
+entries use roughly 12MB per instance at run-time.
+
+Author: Vitaly Zuevsky <vitaly.zuevsky@hyvd.net>
